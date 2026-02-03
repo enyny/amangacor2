@@ -1,18 +1,14 @@
 // use an integer for version numbers
 version = 1
 
-android {
-    buildFeatures {
-        buildConfig = true
-    }
-}
 
 cloudstream {
-    language = "id"
+
     // All of these properties are optional, you can safely remove them
 
-    description = "mantap bro"
-    authors = listOf("aldrymanu")
+    description = "Mantap Pace"
+    language = "id"
+    authors = listOf("aldry84")
 
     /**
      * Status int as the following:
@@ -23,12 +19,10 @@ cloudstream {
      * */
     status = 1 // will be 3 if unspecified
     tvTypes = listOf(
+        "AsianDrama",
+        "TvSeries",
         "Movie",
-        "TvSeries"
     )
 
-    iconUrl = "https://moviebox.ph/favicon.ico"
-
-    requiresResources = true
-    isCrossPlatform = false
+    iconUrl = "https://new31.ngefilm.site/wp-content/uploads/2023/08/cropped-imageedit_8_4481000408.png"
 }

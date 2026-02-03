@@ -4,6 +4,7 @@ import com.fasterxml.jackson.annotation.JsonProperty
 import com.Adicinemax21.Adicinemax21Extractor.invokeAdiDewasa
 import com.Adicinemax21.Adicinemax21Extractor.invokeKisskh 
 import com.Adicinemax21.Adicinemax21Extractor.invokeAdimoviebox
+import com.Adicinemax21.Adicinemax21Extractor.invokeAdimoviebox2 // Update: Import Provider Baru
 import com.Adicinemax21.Adicinemax21Extractor.invokeGomovies
 import com.Adicinemax21.Adicinemax21Extractor.invokeIdlix
 import com.Adicinemax21.Adicinemax21Extractor.invokeMapple
@@ -65,10 +66,7 @@ open class Adicinemax21 : TmdbProvider() {
         const val mappleAPI = "https://mapple.uk"
         const val vidlinkAPI = "https://vidlink.pro"
         const val vidfastAPI = "https://vidfast.pro"
-        
-        // UPDATED WYZIE API URL (Using 'subs' instead of 'sub')
-        const val wyzieAPI = "https://subs.wyzie.ru" 
-        
+        const val wyzieAPI = "https://sub.wyzie.ru"
         const val vixsrcAPI = "https://vixsrc.to"
         const val vidsrccxAPI = "https://vidsrc.cx"
         const val superembedAPI = "https://multiembed.mov"
@@ -178,7 +176,7 @@ open class Adicinemax21 : TmdbProvider() {
             }
         } catch (e: Exception) {
             throw ErrorLoadingException("Invalid URL or JSON data: ${e.message}")
-        }
+        } ?: throw ErrorLoadingException("Invalid data format")
 
         val type = getType(data.type)
         val append = "alternative_titles,credits,external_ids,keywords,videos,recommendations"
@@ -341,6 +339,17 @@ open class Adicinemax21 : TmdbProvider() {
                     callback
                 )
             },
+            // Update: Menambahkan Adimoviebox2 sebagai salah satu Prioritas
+            {
+                invokeAdimoviebox2(
+                    res.title ?: return@runAllAsync,
+                    res.year,
+                    res.season,
+                    res.episode,
+                    subtitleCallback,
+                    callback
+                )
+            },
             // 1. AdiDewasa (Asian Drama Priority)
             {
                 invokeAdiDewasa(
@@ -445,8 +454,7 @@ open class Adicinemax21 : TmdbProvider() {
                 invokeMapple(res.id, res.season, res.episode, subtitleCallback, callback)
             },
             {
-                // UPDATED: Prioritize IMDB ID for better subtitle match
-                invokeWyzie(res.imdbId ?: res.id, res.season, res.episode, subtitleCallback)
+                invokeWyzie(res.id, res.season, res.episode, subtitleCallback)
             },
             {
                 invokeSuperembed(
