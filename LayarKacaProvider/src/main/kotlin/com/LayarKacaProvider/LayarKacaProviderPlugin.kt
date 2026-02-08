@@ -1,17 +1,18 @@
 package com.LayarKacaProvider
 
 import com.lagradost.cloudstream3.plugins.CloudstreamPlugin
-import com.lagradost.cloudstream3.plugins.Plugin // Penting: Import Plugin
+import com.lagradost.cloudstream3.plugins.Plugin
 import android.content.Context
 
 @CloudstreamPlugin
-class LayarKacaProviderPlugin : Plugin() { // Perhatikan: extends Plugin(), BUKAN CloudstreamPlugin()
-    
+class LayarKacaPlugin : Plugin() {
     override fun load(context: Context) {
-        // Mendaftarkan Provider Utama
+        // Provider Utama
         registerMainAPI(LayarKacaProvider())
-
-        // Mendaftarkan Extractor (Pastikan file Hydrax.kt ada)
-        registerExtractorAPI(Hydrax())
+        
+        // Extractor Servers
+        registerExtractorAPI(EmturbovidExtractor()) // TurboVip
+        registerExtractorAPI(P2PExtractor())        // P2P
+        registerExtractorAPI(F16Extractor())        // CAST (Baru!)
     }
 }
