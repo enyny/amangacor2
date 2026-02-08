@@ -17,7 +17,7 @@ class LayarKacaProvider : MainAPI() {
     override var lang = "id"
     override val supportedTypes = setOf(TvType.Movie, TvType.TvSeries)
 
-    // Header khusus berdasarkan analisis CURL (Linux User Agent) agar tidak diblokir
+    // Header khusus meniru browser Linux Chrome agar lolos validasi keamanan
     private val turboHeaders = mapOf(
         "User-Agent" to "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/137.0.0.0 Safari/537.36",
         "Sec-Fetch-Dest" to "iframe",
@@ -194,7 +194,7 @@ class LayarKacaProvider : MainAPI() {
 
         if (mainIframeUrl.isNotBlank()) {
             if (mainIframeUrl.contains("playeriframe.sbs") || mainIframeUrl.contains("turbovid") || mainIframeUrl.contains("emturbovid")) {
-                // Gunakan ekstraktor khusus untuk proteksi baru
+                // Gunakan ekstraktor khusus untuk proteksi baru (TurboVid)
                 extractTurboVid(mainIframeUrl, data, callback)
             } else {
                 // Gunakan ekstraktor standar Cloudstream untuk host lain
@@ -208,7 +208,7 @@ class LayarKacaProvider : MainAPI() {
     private suspend fun extractTurboVid(url: String, referer: String, callback: (ExtractorLink) -> Unit) {
         try {
             // Langkah 1: Request ke Wrapper (playeriframe.sbs)
-            // Wajib menggunakan Referer halaman LK21 asli
+            // Header Referer PENTING di sini agar lolos validasi "pintu depan"
             val wrapperHeaders = turboHeaders.toMutableMap()
             wrapperHeaders["Referer"] = referer
 
@@ -231,18 +231,24 @@ class LayarKacaProvider : MainAPI() {
             if (match != null) {
                 val m3u8Url = match.groupValues[1]
                 
-                // Tentukan Origin header berdasarkan host target
+                // Tentukan Origin header berdasarkan host target (Fix Error 2004)
                 val host = try { URI(targetUrl).host } catch (e: Exception) { "" }
                 val origin = if (host.isNotEmpty()) "https://$host" else "https://turbovidhls.com"
 
+                // HEADER VIDEO FINAL
+                // Origin: Wajib ada
+                // Referer: Diset ke halaman player (turbovidhls), BUKAN lk21
+                // Sec-Fetch-*: Agar request terlihat otentik seperti browser
                 val videoHeaders = mapOf(
                     "Origin" to origin,
                     "Referer" to targetUrl,
                     "User-Agent" to turboHeaders["User-Agent"]!!,
-                    "Accept" to "*/*"
+                    "Accept" to "*/*",
+                    "Sec-Fetch-Site" to "cross-site",
+                    "Sec-Fetch-Mode" to "cors"
                 )
 
-                // Langkah 3: Gunakan newExtractorLink untuk menghindari error "prerelease API"
+                // Langkah 3: Gunakan newExtractorLink (Cloudstream Standard)
                 callback.invoke(
                     newExtractorLink(
                         source = "LK21 VIP",
