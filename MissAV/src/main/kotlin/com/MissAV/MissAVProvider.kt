@@ -3,6 +3,8 @@ package com.MissAV
 import com.lagradost.cloudstream3.*
 import com.lagradost.cloudstream3.utils.ExtractorLink
 import com.lagradost.cloudstream3.utils.Qualities
+// Import ini penting untuk mengakses fungsi newExtractorLink
+import com.lagradost.cloudstream3.utils.newExtractorLink 
 import org.jsoup.nodes.Element
 
 class MissAVProvider : MainAPI() {
@@ -27,7 +29,6 @@ class MissAVProvider : MainAPI() {
         val document = app.get(url).document
         val homeItems = ArrayList<SearchResponse>()
 
-        // Selector disesuaikan dengan HTML yang kamu kirim (div.thumbnail)
         document.select("div.thumbnail").forEach { element ->
             val linkElement = element.selectFirst("a.text-secondary") ?: return@forEach
             val href = linkElement.attr("href")
@@ -42,9 +43,7 @@ class MissAVProvider : MainAPI() {
             })
         }
         
-        // PERBAIKAN PENTING:
-        // Kita bungkus manual ke HomePageList agar bisa set isHorizontalImages = true
-        // Sesuai definisi data class HomePageList di MainAPI.kt baris 539
+        // Membungkus list ke HomePageList
         return newHomePageResponse(
             HomePageList(
                 name = request.name,
@@ -84,7 +83,7 @@ class MissAVProvider : MainAPI() {
         }
     }
 
-    // --- 4. LOAD (DETAIL) ---
+    // --- 4. LOAD (Detail Video) ---
     override suspend fun load(url: String): LoadResponse? {
         val document = app.get(url).document
 
@@ -93,15 +92,13 @@ class MissAVProvider : MainAPI() {
             ?: document.selectFirst("video.player")?.attr("poster")
         val description = document.selectFirst("div.text-secondary.mb-2")?.text()?.trim()
 
-        // PERBAIKAN PENTING:
-        // Menghapus 'LinkData(url)'. MainAPI.kt baris 970 menunjukkan parameter 'data' bisa berupa String biasa.
         return newMovieLoadResponse(title, url, TvType.NSFW, url) {
             this.posterUrl = poster
             this.plot = description
         }
     }
 
-    // --- 5. LOAD LINKS (PLAYER) ---
+    // --- 5. LOAD LINKS (FIXED: Menggunakan newExtractorLink) ---
     override suspend fun loadLinks(
         data: String,
         isCasting: Boolean,
@@ -128,12 +125,11 @@ class MissAVProvider : MainAPI() {
 
                 val sourceName = if (fixedUrl.contains("surrit")) "Surrit (HD)" else "MissAV (Backup)"
 
-                // PERBAIKAN PENTING:
-                // Kembali menggunakan konstruktor Legacy (isM3u8 = true)
-                // Ini sesuai dengan ExtractorLink di MainAPI.kt baris 632 (constructor lama)
-                // Agar tidak kena error "Prerelease API"
+                // PERBAIKAN DI SINI:
+                // Menggunakan fungsi helper 'newExtractorLink' bukan constructor class-nya langsung.
+                // Ini akan menyelesaikan masalah "Deprecated" dan juga aman dari error "Prerelease".
                 callback.invoke(
-                    ExtractorLink(
+                    newExtractorLink(
                         source = this.name,
                         name = "$sourceName $quality",
                         url = fixedUrl,
