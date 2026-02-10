@@ -1,7 +1,6 @@
 package com.JavHey
 
 import com.fasterxml.jackson.annotation.JsonProperty
-import com.lagradost.api.Log
 import com.lagradost.cloudstream3.*
 import com.lagradost.cloudstream3.utils.*
 import com.lagradost.cloudstream3.utils.AppUtils.tryParseJson
@@ -14,10 +13,9 @@ import java.util.Base64
 import javax.crypto.Cipher
 import javax.crypto.spec.GCMParameterSpec
 import javax.crypto.spec.SecretKeySpec
-import kotlin.random.Random
 
 // ==========================================
-// 1. MANAJER UTAMA (JAVHEY EXTRACTOR)
+// 1. MANAJER UTAMA (JAVHEY EXTRACTOR) - SMART FILTER
 // ==========================================
 object JavHeyExtractor {
     suspend fun invoke(
@@ -26,8 +24,10 @@ object JavHeyExtractor {
         callback: (ExtractorLink) -> Unit
     ) {
         val uniqueUrls = mutableSetOf<String>()
+        // Set untuk mencatat provider mana yang SUDAH diambil
+        val registeredProviders = mutableSetOf<String>()
 
-        // Decode Base64 Hidden Links
+        // 1. Ambil Link dari Input Base64
         try {
             val hiddenInput = document.selectFirst("input#links")
             val hiddenLinksEncrypted = hiddenInput?.attr("value")
@@ -41,7 +41,7 @@ object JavHeyExtractor {
             }
         } catch (e: Exception) { e.printStackTrace() }
 
-        // Fallback: Tombol Download
+        // 2. Ambil Link dari Tombol Download
         try {
             document.select("div.links-download a").forEach { linkTag ->
                 val downloadUrl = linkTag.attr("href").trim()
@@ -49,15 +49,62 @@ object JavHeyExtractor {
             }
         } catch (e: Exception) { e.printStackTrace() }
 
-        // Eksekusi Link (Tanpa Duplikat)
+        // 3. PROSES LINK DENGAN FILTER "SATU NAMA SAJA"
         uniqueUrls.forEach { url ->
-            loadExtractor(url, subtitleCallback, callback)
+            val providerTag = getProviderTag(url)
+            
+            // Jika provider ini (misal VidHide) BELUM ada di daftar, maka muat.
+            // Jika SUDAH ada, lewati (skip) agar tidak duplikat di menu Sumber.
+            if (!registeredProviders.contains(providerTag)) {
+                
+                // Tandai provider ini sudah diambil
+                // Catatan: Jika tag-nya "Unknown", kita selalu izinkan (jangan di-filter)
+                if (providerTag != "Unknown") {
+                    registeredProviders.add(providerTag)
+                }
+
+                loadExtractor(url, subtitleCallback, callback)
+            }
+        }
+    }
+
+    // Fungsi untuk mengelompokkan URL berdasarkan Keluarga Server
+    private fun getProviderTag(url: String): String {
+        val u = url.lowercase()
+        return when {
+            // Keluarga VidHidePro
+            u.contains("vidhide") || u.contains("filelions") || u.contains("kinoger.be") -> "VidHide"
+            
+            // Keluarga EarnVids
+            u.contains("smoothpre") || u.contains("dhtpre") || u.contains("peytonepre") -> "EarnVids"
+            
+            // Keluarga MixDrop
+            u.contains("mixdrop") -> "MixDrop"
+            
+            // Keluarga Swdyu (Varian Streamwish tapi ingin nama beda)
+            u.contains("swdyu") -> "Swdyu"
+            
+            // Keluarga StreamWish (Umum)
+            u.contains("streamwish") || u.contains("mwish") || u.contains("dwish") || 
+            u.contains("wishembed") || u.contains("wishfast") || u.contains("jodwish") ||
+            u.contains("swhoi") || u.contains("awish") -> "StreamWish"
+            
+            // Keluarga DoodStream
+            u.contains("dood") || u.contains("ds2play") || u.contains("ds2video") || u.contains("dooood") -> "DoodStream"
+            
+            // Keluarga LuluStream
+            u.contains("lulustream") || u.contains("luluvdo") || u.contains("kinoger.pw") -> "LuluStream"
+            
+            // Keluarga Byse (Hanya untuk jaga-jaga)
+            u.contains("byse") -> "Byse"
+            
+            else -> "Unknown" // Biarkan lolos jika tidak dikenali
         }
     }
 }
 
 // ==========================================
-// 2. DAPUR VIDHIDE / FILELIONS (Custom)
+// 2. DAPUR VIDHIDE / FILELIONS
 // ==========================================
 class VidHidePro1 : VidHidePro() { override var mainUrl = "https://filelions.live" }
 class VidHidePro2 : VidHidePro() { override var mainUrl = "https://filelions.online" }
@@ -65,6 +112,7 @@ class VidHidePro3 : VidHidePro() { override var mainUrl = "https://filelions.to"
 class VidHidePro4 : VidHidePro() { override val mainUrl = "https://kinoger.be" }
 class VidHidePro5 : VidHidePro() { override val mainUrl = "https://vidhidevip.com" }
 class VidHidePro6 : VidHidePro() { override val mainUrl = "https://vidhidepre.com" }
+// EarnVids
 class Smoothpre : VidHidePro() { override var name = "EarnVids"; override var mainUrl = "https://smoothpre.com" }
 class Dhtpre : VidHidePro() { override var name = "EarnVids"; override var mainUrl = "https://dhtpre.com" }
 class Peytonepre : VidHidePro() { override var name = "EarnVids"; override var mainUrl = "https://peytonepre.com" }
@@ -75,10 +123,7 @@ open class VidHidePro : ExtractorApi() {
     override val requiresReferer = true
 
     override suspend fun getUrl(url: String, referer: String?, subtitleCallback: (SubtitleFile) -> Unit, callback: (ExtractorLink) -> Unit) {
-        val headers = mapOf(
-            "Sec-Fetch-Dest" to "empty", "Sec-Fetch-Mode" to "cors", "Sec-Fetch-Site" to "cross-site",
-            "Origin" to mainUrl, "User-Agent" to USER_AGENT
-        )
+        val headers = mapOf("Origin" to mainUrl, "User-Agent" to USER_AGENT)
         val response = app.get(getEmbedUrl(url), referer = referer)
         val script = if (!getPacked(response.text).isNullOrEmpty()) {
             var result = getAndUnpack(response.text)
@@ -103,7 +148,7 @@ open class VidHidePro : ExtractorApi() {
 }
 
 // ==========================================
-// 3. DAPUR MIXDROP (Custom)
+// 3. DAPUR MIXDROP
 // ==========================================
 class MixDropBz : MixDrop(){ override var mainUrl = "https://mixdrop.bz" }
 class MixDropAg : MixDrop(){ override var mainUrl = "https://mixdrop.ag" }
@@ -115,9 +160,7 @@ open class MixDrop : ExtractorApi() {
     override var mainUrl = "https://mixdrop.co"
     private val srcRegex = Regex("""wurl.*?=.*?"(.*?)";""")
     override val requiresReferer = false
-
     override fun getExtractorUrl(id: String): String = "$mainUrl/e/$id"
-
     override suspend fun getUrl(url: String, referer: String?): List<ExtractorLink>? {
         with(app.get(url.replaceFirst("/f/", "/e/"))) {
             getAndUnpack(this.text).let { unpackedText ->
@@ -134,35 +177,15 @@ open class MixDrop : ExtractorApi() {
 }
 
 // ==========================================
-// 4. DAPUR STREAMWISH (Custom)
+// 4. DAPUR STREAMWISH
 // ==========================================
 class Mwish : StreamWishExtractor() { override val name = "Mwish"; override val mainUrl = "https://mwish.pro" }
 class Dwish : StreamWishExtractor() { override val name = "Dwish"; override val mainUrl = "https://dwish.pro" }
-class Ewish : StreamWishExtractor() { override val name = "Embedwish"; override val mainUrl = "https://embedwish.com" }
-class WishembedPro : StreamWishExtractor() { override val name = "Wishembed"; override val mainUrl = "https://wishembed.pro" }
-class Kswplayer : StreamWishExtractor() { override val name = "Kswplayer"; override val mainUrl = "https://kswplayer.info" }
-class Wishfast : StreamWishExtractor() { override val name = "Wishfast"; override val mainUrl = "https://wishfast.top" }
 class Streamwish2 : StreamWishExtractor() { override val mainUrl = "https://streamwish.site" }
-class SfastwishCom : StreamWishExtractor() { override val name = "Sfastwish"; override val mainUrl = "https://sfastwish.com" }
-class Strwish : StreamWishExtractor() { override val name = "Strwish"; override val mainUrl = "https://strwish.xyz" }
-class Strwish2 : StreamWishExtractor() { override val name = "Strwish"; override val mainUrl = "https://strwish.com" }
-class FlaswishCom : StreamWishExtractor() { override val name = "Flaswish"; override val mainUrl = "https://flaswish.com" }
-class Awish : StreamWishExtractor() { override val name = "Awish"; override val mainUrl = "https://awish.pro" }
-class Obeywish : StreamWishExtractor() { override val name = "Obeywish"; override val mainUrl = "https://obeywish.com" }
-class Jodwish : StreamWishExtractor() { override val name = "Jodwish"; override val mainUrl = "https://jodwish.com" }
-class Swhoi : StreamWishExtractor() { override val name = "Swhoi"; override val mainUrl = "https://swhoi.com" }
-class Multimovies : StreamWishExtractor() { override val name = "Multimovies"; override val mainUrl = "https://multimovies.cloud" }
-class UqloadsXyz : StreamWishExtractor() { override val name = "Uqloads"; override val mainUrl = "https://uqloads.xyz" }
-class Doodporn : StreamWishExtractor() { override val name = "Doodporn"; override val mainUrl = "https://doodporn.xyz" }
-class CdnwishCom : StreamWishExtractor() { override val name = "Cdnwish"; override val mainUrl = "https://cdnwish.com" }
-class Asnwish : StreamWishExtractor() { override val name = "Asnwish"; override val mainUrl = "https://asnwish.com" }
-class Nekowish : StreamWishExtractor() { override val name = "Nekowish"; override val mainUrl = "https://nekowish.my.id" }
-class Nekostream : StreamWishExtractor() { override val name = "Nekostream"; override val mainUrl = "https://neko-stream.click" }
+class WishembedPro : StreamWishExtractor() { override val name = "Wishembed"; override val mainUrl = "https://wishembed.pro" }
+class Wishfast : StreamWishExtractor() { override val name = "Wishfast"; override val mainUrl = "https://wishfast.top" }
+// Swdyu (Varian Streamwish tapi dipisah namanya sesuai screenshot)
 class Swdyu : StreamWishExtractor() { override val name = "Swdyu"; override val mainUrl = "https://swdyu.com" }
-class Wishonly : StreamWishExtractor() { override val name = "Wishonly"; override val mainUrl = "https://wishonly.site" }
-class Playerwish : StreamWishExtractor() { override val name = "Playerwish"; override val mainUrl = "https://playerwish.com" }
-class StreamHLS : StreamWishExtractor() { override val name = "StreamHLS"; override val mainUrl = "https://streamhls.to" }
-class HlsWish : StreamWishExtractor() { override val name = "HlsWish"; override val mainUrl = "https://hlswish.com" }
 
 open class StreamWishExtractor : ExtractorApi() {
     override val name = "Streamwish"
@@ -170,11 +193,7 @@ open class StreamWishExtractor : ExtractorApi() {
     override val requiresReferer = true
 
     override suspend fun getUrl(url: String, referer: String?, subtitleCallback: (SubtitleFile) -> Unit, callback: (ExtractorLink) -> Unit) {
-        val headers = mapOf(
-            "Accept" to "*/*", "Connection" to "keep-alive", "Sec-Fetch-Dest" to "empty",
-            "Sec-Fetch-Mode" to "cors", "Sec-Fetch-Site" to "cross-site", "Referer" to "$mainUrl/",
-            "Origin" to "$mainUrl/", "User-Agent" to USER_AGENT
-        )
+        val headers = mapOf("Origin" to "$mainUrl/", "User-Agent" to USER_AGENT)
         val pageResponse = app.get(resolveEmbedUrl(url), referer = referer)
         val playerScriptData = when {
             !getPacked(pageResponse.text).isNullOrEmpty() -> getAndUnpack(pageResponse.text)
@@ -187,14 +206,9 @@ open class StreamWishExtractor : ExtractorApi() {
         if (!directStreamUrl.isNullOrEmpty()) {
             generateM3u8(name, directStreamUrl, mainUrl, headers = headers).forEach(callback)
         } else {
-            val webViewM3u8Resolver = WebViewResolver(
-                interceptUrl = Regex("""txt|m3u8"""), additionalUrls = listOf(Regex("""txt|m3u8""")),
-                useOkhttp = false, timeout = 15_000L
-            )
+            val webViewM3u8Resolver = WebViewResolver( Regex("""txt|m3u8"""), listOf(Regex("""txt|m3u8""")), false, 15_000L )
             val interceptedStreamUrl = app.get(url, referer = referer, interceptor = webViewM3u8Resolver).url
-            if (interceptedStreamUrl.isNotEmpty()) {
-                generateM3u8(name, interceptedStreamUrl, mainUrl, headers = headers).forEach(callback)
-            }
+            if (interceptedStreamUrl.isNotEmpty()) generateM3u8(name, interceptedStreamUrl, mainUrl, headers = headers).forEach(callback)
         }
     }
     private fun resolveEmbedUrl(inputUrl: String): String {
@@ -205,63 +219,9 @@ open class StreamWishExtractor : ExtractorApi() {
 }
 
 // ==========================================
-// 5. DAPUR BYSE / BYSEBUHO (Custom - Prerelease Removed)
-// ==========================================
-class Bysezejataos : ByseSX() { override var name = "Bysezejataos"; override var mainUrl = "https://bysezejataos.com" }
-class ByseBuho : ByseSX() { override var name = "ByseBuho"; override var mainUrl = "https://bysebuho.com" }
-class ByseVepoin : ByseSX() { override var name = "ByseVepoin"; override var mainUrl = "https://bysevepoin.com" }
-
-open class ByseSX : ExtractorApi() {
-    override var name = "Byse"
-    override var mainUrl = "https://byse.sx"
-    override val requiresReferer = true
-
-    private fun b64UrlDecode(s: String): ByteArray {
-        val fixed = s.replace('-', '+').replace('_', '/')
-        val pad = (4 - fixed.length % 4) % 4
-        return base64DecodeArray(fixed + "=".repeat(pad))
-    }
-    private fun getBaseUrl(url: String) = URI(url).let { "${it.scheme}://${it.host}" }
-    private fun getCodeFromUrl(url: String) = URI(url).path?.trimEnd('/')?.substringAfterLast('/') ?: ""
-
-    private suspend fun getDetails(mainUrl: String): DetailsRoot? {
-        val base = getBaseUrl(mainUrl); val code = getCodeFromUrl(mainUrl)
-        return app.get("$base/api/videos/$code/embed/details").parsedSafe<DetailsRoot>()
-    }
-    private suspend fun getPlayback(mainUrl: String): PlaybackRoot? {
-        val details = getDetails(mainUrl) ?: return null
-        val embedFrameUrl = details.embedFrameUrl
-        val embedBase = getBaseUrl(embedFrameUrl); val code = getCodeFromUrl(embedFrameUrl)
-        val headers = mapOf("accept" to "*/*", "referer" to embedFrameUrl, "x-embed-parent" to mainUrl)
-        return app.get("$embedBase/api/videos/$code/embed/playback", headers = headers).parsedSafe<PlaybackRoot>()
-    }
-    private fun decryptPlayback(playback: Playback): String? {
-        val keyBytes = b64UrlDecode(playback.keyParts[0]) + b64UrlDecode(playback.keyParts[1])
-        val ivBytes = b64UrlDecode(playback.iv)
-        val cipher = Cipher.getInstance("AES/GCM/NoPadding")
-        cipher.init(Cipher.DECRYPT_MODE, SecretKeySpec(keyBytes, "AES"), GCMParameterSpec(128, ivBytes))
-        val jsonStr = String(cipher.doFinal(b64UrlDecode(playback.payload)), StandardCharsets.UTF_8).removePrefix("\uFEFF")
-        return tryParseJson<PlaybackDecrypt>(jsonStr)?.sources?.firstOrNull()?.url
-    }
-    override suspend fun getUrl(url: String, referer: String?, subtitleCallback: (SubtitleFile) -> Unit, callback: (ExtractorLink) -> Unit) {
-        val playbackRoot = getPlayback(url) ?: return
-        val streamUrl = decryptPlayback(playbackRoot.playback) ?: return
-        generateM3u8(name, streamUrl, mainUrl, headers = mapOf("Referer" to getBaseUrl(url))).forEach(callback)
-    }
-}
-// Data classes for Byse
-data class DetailsRoot(val id: Long, val code: String, val title: String, @JsonProperty("poster_url") val posterUrl: String, val description: String, @JsonProperty("created_at") val createdAt: String, @JsonProperty("owner_private") val ownerPrivate: Boolean, @JsonProperty("embed_frame_url") val embedFrameUrl: String)
-data class PlaybackRoot(val playback: Playback)
-data class Playback(val algorithm: String, val iv: String, val payload: String, @JsonProperty("key_parts") val keyParts: List<String>, @JsonProperty("expires_at") val expiresAt: String, @JsonProperty("decrypt_keys") val decryptKeys: DecryptKeys, val iv2: String, val payload2: String)
-data class DecryptKeys(@JsonProperty("edge_1") val edge1: String, @JsonProperty("edge_2") val edge2: String, @JsonProperty("legacy_fallback") val legacyFallback: String)
-data class PlaybackDecrypt(val sources: List<PlaybackDecryptSource>)
-data class PlaybackDecryptSource(val quality: String, val label: String, @JsonProperty("mime_type") val mimeType: String, val url: String, @JsonProperty("bitrate_kbps") val bitrateKbps: Long, val height: Any?)
-
-// ==========================================
-// 6. DAPUR DOOD (Custom)
+// 5. DAPUR DOODSTREAM
 // ==========================================
 class D0000d : DoodLaExtractor() { override var mainUrl = "https://d0000d.com" }
-class D000dCom : DoodLaExtractor() { override var mainUrl = "https://d000d.com" }
 class DoodstreamCom : DoodLaExtractor() { override var mainUrl = "https://doodstream.com" }
 class Dooood : DoodLaExtractor() { override var mainUrl = "https://dooood.com" }
 class DoodWfExtractor : DoodLaExtractor() { override var mainUrl = "https://dood.wf" }
@@ -297,7 +257,7 @@ open class DoodLaExtractor : ExtractorApi() {
 }
 
 // ==========================================
-// 7. DAPUR LULUSTREAM (Custom)
+// 6. DAPUR LULUSTREAM
 // ==========================================
 class Lulustream1 : LuluStream() { override val name = "Lulustream"; override val mainUrl = "https://lulustream.com" }
 class Lulustream2 : LuluStream() { override val name = "Lulustream"; override val mainUrl = "https://kinoger.pw" }
