@@ -12,16 +12,19 @@ class JavHey : MainAPI() {
     override var lang = "id"
     override val supportedTypes = setOf(TvType.NSFW)
 
+    // Header kita buat semirip mungkin dengan browser PC
     private val headers = mapOf(
         "User-Agent" to "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36",
         "Accept" to "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8",
-        "Referer" to "$mainUrl/"
+        "Referer" to "$mainUrl/",
+        "Connection" to "keep-alive" // Tambahan agar koneksi stabil
     )
 
     override val mainPage = mainPageOf(
         "$mainUrl/videos/paling-dilihat/page=" to "Paling Dilihat",
         "$mainUrl/videos/top-rating/page=" to "Top Rating",
-        "$mainUrl/category/21/drama/page=" to "Drama"
+        "$mainUrl/category/21/drama/page=" to "Drama",
+        "$mainUrl/page=" to "Terbaru" // Menambahkan kategori Home/Terbaru explicit
     )
 
     override suspend fun getMainPage(page: Int, request: MainPageRequest): HomePageResponse {
@@ -51,6 +54,10 @@ class JavHey : MainAPI() {
         val description = document.select("p.video-description").text().replace("Description: ", "", ignoreCase = true).trim()
         val poster = document.selectFirst("div.images img")?.getHighQualityImageAttr()
         
+        // DEBUG: Cek apakah halaman berhasil dimuat
+        System.out.println("JAVHEY_DEBUG: Loading Page -> $url")
+        System.out.println("JAVHEY_DEBUG: Title Found -> $title")
+
         return newMovieLoadResponse(title, url, TvType.NSFW, url) {
             this.posterUrl = poster
             this.plot = description
@@ -63,38 +70,57 @@ class JavHey : MainAPI() {
         subtitleCallback: (SubtitleFile) -> Unit,
         callback: (ExtractorLink) -> Unit
     ): Boolean {
-        val document = app.get(data, headers = headers).document
-        val hiddenLinksEncrypted = document.selectFirst("input#links")?.attr("value")
+        System.out.println("JAVHEY_DEBUG: Start loadLinks for -> $data")
 
-        if (!hiddenLinksEncrypted.isNullOrEmpty()) {
-            try {
-                val decodedBytes = Base64.getDecoder().decode(hiddenLinksEncrypted)
-                val decodedString = String(decodedBytes)
-                val urls = decodedString.split(",,,")
+        try {
+            // Kita tambah timeout jadi 30 detik untuk halaman yang berat
+            val document = app.get(data, headers = headers, timeout = 30).document
+            
+            // 1. Cek Input Links (Metode Utama)
+            val hiddenInput = document.selectFirst("input#links")
+            val hiddenLinksEncrypted = hiddenInput?.attr("value")
+
+            System.out.println("JAVHEY_DEBUG: Input#links exists? -> ${hiddenInput != null}")
+            
+            if (!hiddenLinksEncrypted.isNullOrEmpty()) {
+                System.out.println("JAVHEY_DEBUG: Found Base64 string! Decoding...")
+                try {
+                    val decodedBytes = Base64.getDecoder().decode(hiddenLinksEncrypted)
+                    val decodedString = String(decodedBytes)
+                    System.out.println("JAVHEY_DEBUG: Decoded Links -> $decodedString")
+                    
+                    val urls = decodedString.split(",,,")
+                    urls.forEach { sourceUrl ->
+                        val cleanUrl = sourceUrl.trim()
+                        if (cleanUrl.isNotBlank() && cleanUrl.startsWith("http")) {
+                            System.out.println("JAVHEY_DEBUG: Loading Extractor for -> $cleanUrl")
+                            loadExtractor(cleanUrl, subtitleCallback, callback)
+                        }
+                    }
+                } catch (e: Exception) {
+                    System.out.println("JAVHEY_DEBUG: Error decoding Base64 -> ${e.message}")
+                    e.printStackTrace()
+                }
+            } else {
+                // Jika Input kosong, cek apakah ada HTML lain yang mencurigakan (mungkin struktur berubah)
+                System.out.println("JAVHEY_DEBUG: WARNING! No Base64 found in input#links")
                 
-                // --- DEBUG LOGGING ---
-                // Lihat ini di Logcat dengan filter "JAVHEY_DEBUG"
-                System.out.println("JAVHEY_DEBUG: Decoded String: $decodedString")
+                // Cek Fallback (Button Download manual)
+                val downloadLinks = document.select("div.links-download a")
+                System.out.println("JAVHEY_DEBUG: Checking fallback div.links-download -> Found ${downloadLinks.size} links")
                 
-                urls.forEach { sourceUrl ->
-                    val cleanUrl = sourceUrl.trim()
-                    if (cleanUrl.isNotBlank() && cleanUrl.startsWith("http")) {
-                        System.out.println("JAVHEY_DEBUG: Trying to load extractor for: $cleanUrl")
-                        
-                        // Coba load extractor
-                        loadExtractor(cleanUrl, subtitleCallback, callback)
+                downloadLinks.forEach { linkTag ->
+                    val downloadUrl = linkTag.attr("href")
+                    if (downloadUrl.isNotBlank() && downloadUrl.startsWith("http")) {
+                        System.out.println("JAVHEY_DEBUG: Fallback loading -> $downloadUrl")
+                        loadExtractor(downloadUrl, subtitleCallback, callback)
                     }
                 }
-            } catch (e: Exception) {
-                e.printStackTrace()
             }
-        }
 
-        document.select("div.links-download a").forEach { linkTag ->
-            val downloadUrl = linkTag.attr("href")
-            if (downloadUrl.isNotBlank() && downloadUrl.startsWith("http")) {
-                loadExtractor(downloadUrl, subtitleCallback, callback)
-            }
+        } catch (e: Exception) {
+            System.out.println("JAVHEY_DEBUG: CRITICAL ERROR during loadLinks -> ${e.message}")
+            e.printStackTrace()
         }
         return true
     }
@@ -105,6 +131,11 @@ class JavHey : MainAPI() {
             this.hasAttr("data-original") -> this.attr("data-original")
             else -> this.attr("src")
         }
-        return url
+        return url.toHighRes()
+    }
+
+    private fun String?.toHighRes(): String? {
+        return this?.replace(Regex("-\\d+x\\d+(?=\\.[a-zA-Z]+$)"), "")
+                   ?.replace("-scaled", "")
     }
 }
