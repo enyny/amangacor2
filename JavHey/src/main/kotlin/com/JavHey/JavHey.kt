@@ -42,7 +42,7 @@ class JavHey : MainAPI() {
         val title = titleElement.text().trim()
         val href = fixUrl(titleElement.attr("href"))
         
-        // Ambil gambar langsung dari atribut tanpa regex/pemrosesan
+        // Ambil gambar langsung apa adanya
         val imgTag = this.selectFirst("div.item_header img")
         val posterUrl = imgTag?.attr("data-src")?.takeIf { it.isNotEmpty() } 
             ?: imgTag?.attr("src")
@@ -80,8 +80,8 @@ class JavHey : MainAPI() {
         subtitleCallback: (SubtitleFile) -> Unit,
         callback: (ExtractorLink) -> Unit
     ): Boolean {
-        // Langsung panggil file Extractor.kt
         val document = app.get(data, headers = headers, timeout = 30).document
+        // Panggil Extractor manager kita
         JavHeyExtractor.invoke(document, subtitleCallback, callback)
         return true
     }
