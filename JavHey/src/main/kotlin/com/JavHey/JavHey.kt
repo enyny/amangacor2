@@ -41,12 +41,8 @@ class JavHey : MainAPI() {
         val titleElement = this.selectFirst("div.item_content h3 a") ?: return null
         val title = titleElement.text().trim()
         val href = fixUrl(titleElement.attr("href"))
-        
-        // Ambil gambar langsung apa adanya
         val imgTag = this.selectFirst("div.item_header img")
-        val posterUrl = imgTag?.attr("data-src")?.takeIf { it.isNotEmpty() } 
-            ?: imgTag?.attr("src")
-
+        val posterUrl = imgTag?.attr("data-src")?.takeIf { it.isNotEmpty() } ?: imgTag?.attr("src")
         return newMovieSearchResponse(title, href, TvType.NSFW) { this.posterUrl = posterUrl }
     }
 
@@ -60,13 +56,10 @@ class JavHey : MainAPI() {
         val response = app.get(url, headers = headers, timeout = 30)
         val document = response.document
         val finalUrl = response.url 
-        
         val title = document.selectFirst("h1.product_title")?.text()?.trim() ?: "No Title"
         val description = document.select("p.video-description").text().replace("Description: ", "", ignoreCase = true).trim()
-        
         val imgTag = document.selectFirst("div.images img")
-        val poster = imgTag?.attr("data-src")?.takeIf { it.isNotEmpty() } 
-            ?: imgTag?.attr("src")
+        val poster = imgTag?.attr("data-src")?.takeIf { it.isNotEmpty() } ?: imgTag?.attr("src")
         
         return newMovieLoadResponse(title, finalUrl, TvType.NSFW, finalUrl) {
             this.posterUrl = poster
@@ -81,7 +74,6 @@ class JavHey : MainAPI() {
         callback: (ExtractorLink) -> Unit
     ): Boolean {
         val document = app.get(data, headers = headers, timeout = 30).document
-        // Panggil Extractor manager kita
         JavHeyExtractor.invoke(document, subtitleCallback, callback)
         return true
     }
