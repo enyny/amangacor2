@@ -4,7 +4,6 @@ import com.lagradost.cloudstream3.*
 import com.lagradost.cloudstream3.utils.ExtractorLink
 import com.lagradost.cloudstream3.utils.Qualities
 import com.lagradost.cloudstream3.utils.getAndUnpack
-import com.lagradost.cloudstream3.utils.INFER_TYPE
 import org.jsoup.nodes.Element
 
 @OptIn(com.lagradost.cloudstream3.Prerelease::class)
@@ -87,7 +86,7 @@ class MissAVProvider : MainAPI() {
         }
     }
 
-    // --- LOGIKA SUBTITLE GROUPING ---
+    // --- LOGIKA SUBTITLE GROUPING (Sudah Fix, Jangan Diubah) ---
     private suspend fun fetchSubtitleCat(code: String, subtitleCallback: (SubtitleFile) -> Unit) {
         try {
             val searchUrl = "https://www.subtitlecat.com/index.php?search=$code"
@@ -95,7 +94,7 @@ class MissAVProvider : MainAPI() {
             
             val searchResults = searchDoc.select("table.sub-table tbody tr td:nth-child(1) > a")
             
-            // Ambil 10 varian, tapi JANGAN diberi nomor di namanya.
+            // Ambil 10 varian agar user punya banyak pilihan cadangan
             searchResults.take(10).forEach { linkElement ->
                 var detailPath = linkElement.attr("href")
                 if (!detailPath.startsWith("http")) {
@@ -107,8 +106,8 @@ class MissAVProvider : MainAPI() {
                     val detailDoc = app.get(detailPath).document
                     
                     detailDoc.select("div.sub-single").forEach { item ->
-                        // Disini kuncinya: Nama bahasa harus "Indonesian" saja (tanpa angka)
-                        // Player akan otomatis mendeteksi duplikat nama dan membuat menu 1,2,3...
+                        // RAHASIA GROUPING: Nama bahasa harus sama persis (misal: "Indonesian").
+                        // Cloudstream otomatis bikin angka 1, 2, 3 di UI.
                         val rawLang = item.select("span").getOrNull(1)?.text()?.trim() ?: "Unknown"
                         
                         val downloadEl = item.selectFirst("a.green-link")
@@ -123,7 +122,7 @@ class MissAVProvider : MainAPI() {
                             
                             subtitleCallback.invoke(
                                 SubtitleFile(
-                                    lang = rawLang, // Langsung nama bahasa aslinya
+                                    lang = rawLang, 
                                     url = finalUrl
                                 )
                             )
@@ -152,7 +151,7 @@ class MissAVProvider : MainAPI() {
         val m3u8Regex = Regex("""(https?:\\?\/\\?\/[^"']+\.m3u8)""")
         val matches = m3u8Regex.findAll(text)
         
-        // Deduping URL supaya sumber video bersih
+        // Deduping URL supaya tidak ada link kembar
         val uniqueUrls = matches.map { 
             it.groupValues[1].replace("\\/", "/") 
         }.toSet()
@@ -160,12 +159,13 @@ class MissAVProvider : MainAPI() {
         if (uniqueUrls.isNotEmpty()) {
             uniqueUrls.forEach { fixedUrl ->
                 
-                val quality = when {
-                    fixedUrl.contains("1280x720") || fixedUrl.contains("720p") -> Qualities.P720.value
-                    fixedUrl.contains("1920x1080") || fixedUrl.contains("1080p") -> Qualities.P1080.value
-                    fixedUrl.contains("842x480") || fixedUrl.contains("480p") -> Qualities.P480.value
-                    else -> Qualities.Unknown.value
-                }
+                // --- KUNCI UTAMA PERBAIKAN SUMBER ---
+                // Kita set Quality ke Unknown.
+                // Ini mencegah Cloudstream membuat entri terpisah (Surrit 1080p, Surrit 720p).
+                // Hasilnya: Cuma ada satu "Surrit" di daftar sumber.
+                // Resolusi (Tracks) akan dibaca otomatis oleh Player dari file .m3u8
+                
+                val quality = Qualities.Unknown.value
 
                 val sourceName = if (fixedUrl.contains("surrit")) "Surrit" else "MissAV"
 
@@ -175,8 +175,8 @@ class MissAVProvider : MainAPI() {
                         name = sourceName,
                         url = fixedUrl,
                         referer = data,
-                        quality = quality,
-                        isM3u8 = true
+                        quality = quality, // Set ke Unknown agar UI bersih
+                        isM3u8 = true      // Player akan parsing resolusi secara otomatis
                     )
                 )
             }
