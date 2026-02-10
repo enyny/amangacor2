@@ -3,8 +3,7 @@ package com.MissAV
 import com.lagradost.cloudstream3.*
 import com.lagradost.cloudstream3.utils.ExtractorLink
 import com.lagradost.cloudstream3.utils.Qualities
-// Import ini untuk membuka kode enkripsi JS
-import com.lagradost.cloudstream3.utils.getAndUnpack 
+import com.lagradost.cloudstream3.utils.getAndUnpack
 import org.jsoup.nodes.Element
 
 class MissAVProvider : MainAPI() {
@@ -93,7 +92,8 @@ class MissAVProvider : MainAPI() {
         }
     }
 
-    @Suppress("DEPRECATION") 
+    // PENTING: Gunakan DEPRECATION_ERROR agar compiler mengizinkan metode lama
+    @Suppress("DEPRECATION_ERROR") 
     override suspend fun loadLinks(
         data: String,
         isCasting: Boolean,
@@ -102,17 +102,9 @@ class MissAVProvider : MainAPI() {
     ): Boolean {
         
         var text = app.get(data).text
-        
-        // PENTING: Gunakan getAndUnpack()
-        // Ini akan membuka kode javascript yang di-pack (eval function)
-        // dimana biasanya link .m3u8 disembunyikan.
         text = getAndUnpack(text) 
 
-        // Regex yang lebih kuat:
-        // Menangkap "https://" ATAU "https:\/\/" 
-        // Diikuti karakter apa saja sampai ketemu .m3u8
         val m3u8Regex = Regex("""(https?:\\?\/\\?\/[^"']+\.m3u8)""")
-        
         val matches = m3u8Regex.findAll(text)
         
         if (matches.count() > 0) {
@@ -130,6 +122,8 @@ class MissAVProvider : MainAPI() {
 
                 val sourceName = if (fixedUrl.contains("surrit")) "Surrit (HD)" else "MissAV (Backup)"
 
+                // Menggunakan Constructor LAMA (yang punya parameter referer & isM3u8)
+                // Ini aman karena kita sudah pakai @Suppress("DEPRECATION_ERROR") di atas
                 callback.invoke(
                     ExtractorLink(
                         source = this.name,
