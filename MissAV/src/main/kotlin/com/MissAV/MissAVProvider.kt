@@ -46,8 +46,12 @@ class MissAVProvider : MainAPI() {
     }
 
     override suspend fun search(query: String): List<SearchResponse> {
-        val fixedQuery = query.trim().replace(" ", "-")
+        // PERBAIKAN PENCARIAN:
+        // Jangan ubah spasi jadi strip (-), tapi gunakan encoding URL (%20).
+        // Ini agar kata kunci panjang (misal: "suami istri menikah") terbaca sebagai 3 kata terpisah.
+        val fixedQuery = query.trim().replace(" ", "%20")
         val url = "$mainUrl/$lang/search/$fixedQuery"
+        
         return try {
             val document = app.get(url).document
             val results = ArrayList<SearchResponse>()
@@ -86,7 +90,6 @@ class MissAVProvider : MainAPI() {
         val recommendations = ArrayList<SearchResponse>()
         
         try {
-            // 1. Tentukan sumber saran (Prioritas: Aktris -> Pembuat -> Genre)
             var recUrl = document.selectFirst("div.text-secondary a[href*='/actresses/']")?.attr("href")
             
             if (recUrl == null) {
@@ -100,31 +103,26 @@ class MissAVProvider : MainAPI() {
                 val baseUrl = fixUrl(recUrl)
                 var page = 1
                 
-                // LOOPING: Ambil halaman 1 (dapat 16 film), kalau kurang dari 20, ambil halaman 2.
                 while (recommendations.size < 20 && page <= 3) {
-                    
                     val targetUrl = if (page > 1) "$baseUrl?page=$page" else baseUrl
                     val recDoc = app.get(targetUrl).document
                     val items = recDoc.select("div.thumbnail")
                     
-                    if (items.isEmpty()) break // Berhenti jika halaman kosong
+                    if (items.isEmpty()) break 
 
                     for (element in items) {
-                        // Stop jika sudah dapat 20 item pas
                         if (recommendations.size >= 20) break
 
                         val linkElement = element.selectFirst("a.text-secondary") ?: continue
                         val href = linkElement.attr("href")
                         val fixedVideoUrl = fixUrl(href)
 
-                        // Jangan masukkan video yang sedang ditonton
                         if (fixedVideoUrl != url) {
                             val recTitle = linkElement.text().trim()
                             val img = element.selectFirst("img")
                             val recPoster = img?.attr("data-src") ?: img?.attr("src")
 
                             if (!recPoster.isNullOrEmpty()) {
-                                // Cek agar tidak ada duplikat di list rekomendasi
                                 val isDuplicate = recommendations.any { it.url == fixedVideoUrl }
                                 if (!isDuplicate) {
                                     recommendations.add(
@@ -136,7 +134,7 @@ class MissAVProvider : MainAPI() {
                             }
                         }
                     }
-                    page++ // Lanjut ke halaman berikutnya
+                    page++ 
                 }
             }
         } catch (e: Exception) {
@@ -158,11 +156,9 @@ class MissAVProvider : MainAPI() {
             
             val searchResults = searchDoc.select("table.sub-table tbody tr td:nth-child(1) > a")
             
-            // Ambil 15 hasil teratas untuk dicek
             searchResults.take(15).forEach { linkElement ->
                 val resultTitle = linkElement.text().trim()
                 
-                // FILTER: Judul subtitle WAJIB mengandung Kode Video (misal: SSNI-528)
                 if (resultTitle.contains(code, ignoreCase = true)) {
                     var detailPath = linkElement.attr("href")
                     if (!detailPath.startsWith("http")) {
@@ -187,14 +183,14 @@ class MissAVProvider : MainAPI() {
                                 
                                 subtitleCallback.invoke(
                                     SubtitleFile(
-                                        lang = rawLang, // Biarkan nama asli agar player melakukan grouping (1, 2, 3)
+                                        lang = rawLang, 
                                         url = finalUrl
                                     )
                                 )
                             }
                         }
                     } catch (e: Exception) {
-                        // Skip error per item
+                        
                     }
                 }
             }
@@ -221,7 +217,6 @@ class MissAVProvider : MainAPI() {
             it.groupValues[1].replace("\\/", "/") 
         }.toSet()
 
-        // Filter nama sumber agar tidak ganda di UI
         val addedNames = mutableListOf<String>()
 
         if (uniqueUrls.isNotEmpty()) {
@@ -236,7 +231,7 @@ class MissAVProvider : MainAPI() {
                             name = sourceName,
                             url = fixedUrl,
                             referer = data,
-                            quality = Qualities.Unknown.value, // Unknown = Auto (Player baca track dari m3u8)
+                            quality = Qualities.Unknown.value,
                             isM3u8 = true
                         )
                     )
