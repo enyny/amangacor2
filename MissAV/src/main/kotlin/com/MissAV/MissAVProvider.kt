@@ -2,8 +2,10 @@ package com.MissAV
 
 import com.lagradost.cloudstream3.*
 import com.lagradost.cloudstream3.utils.ExtractorLink
+import com.lagradost.cloudstream3.utils.ExtractorLinkType
 import com.lagradost.cloudstream3.utils.Qualities
 import com.lagradost.cloudstream3.utils.getAndUnpack //
+import com.lagradost.cloudstream3.utils.newExtractorLink //
 import org.jsoup.nodes.Element
 
 class MissAVProvider : MainAPI() {
@@ -39,13 +41,8 @@ class MissAVProvider : MainAPI() {
             })
         }
         
-        // Membungkus ke HomePageList agar layout Horizontal muncul di aplikasi
         return newHomePageResponse(
-            HomePageList(
-                name = request.name,
-                list = homeItems,
-                isHorizontalImages = true 
-            ),
+            HomePageList(name = request.name, list = homeItems, isHorizontalImages = true),
             hasNext = true
         )
     }
@@ -80,7 +77,6 @@ class MissAVProvider : MainAPI() {
 
     override suspend fun load(url: String): LoadResponse? {
         val document = app.get(url).document
-
         val title = document.selectFirst("h1.text-base")?.text()?.trim() ?: "Unknown Title"
         val poster = document.selectFirst("meta[property='og:image']")?.attr("content")
             ?: document.selectFirst("video.player")?.attr("poster")
@@ -101,39 +97,33 @@ class MissAVProvider : MainAPI() {
             val searchUrl = "https://www.subtitlecat.com/index.php?search=$code"
             val searchDoc = app.get(searchUrl).document
             
+            // Mencari link detail yang mengandung kode film
             val searchResults = searchDoc.select("table.sub-table tbody tr td:nth-child(1) > a")
             val targetResult = searchResults.find { it.text().contains(code, ignoreCase = true) } ?: searchResults.firstOrNull()
 
             if (targetResult != null) {
                 var detailPath = targetResult.attr("href")
-                if (!detailPath.startsWith("http")) {
-                    detailPath = if (detailPath.startsWith("/")) detailPath else "/$detailPath"
-                    detailPath = "https://www.subtitlecat.com$detailPath"
-                }
+                val detailUrl = if (detailPath.startsWith("http")) detailPath else "https://www.subtitlecat.com/${detailPath.removePrefix("/")}"
 
-                val detailDoc = app.get(detailPath).document
+                val detailDoc = app.get(detailUrl).document
                 val subItems = detailDoc.select("div.sub-single")
                 
-                var indoCount = 1 // Counter untuk membedakan versi Indonesia
+                var indoIndex = 1 // Penomoran untuk daftar pilihan di player
 
                 subItems.forEach { item ->
                     val langText = item.select("span").getOrNull(1)?.text()?.trim() ?: ""
                     val downloadEl = item.selectFirst("a.green-link") //
                     val downloadHref = downloadEl?.attr("href")
 
-                    // Tarik SEMUA data yang ada bahasa Indonesian-nya [sesuai permintaan user]
+                    // Tarik semua data yang memiliki label "Indonesian"
                     if (downloadHref != null && langText.contains("Indonesian", ignoreCase = true)) {
-                        val finalUrl = if (downloadHref.startsWith("http")) {
-                            downloadHref
-                        } else {
-                            "https://www.subtitlecat.com$downloadHref"
-                        }
+                        val finalUrl = if (downloadHref.startsWith("http")) downloadHref else "https://www.subtitlecat.com/${downloadHref.removePrefix("/")}"
                         
-                        // Kirim ke player dengan penomoran agar user bisa pilih versi terbaik
+                        // Kirim ke player sebagai pilihan terpisah (Indonesian 1, Indonesian 2, dst)
                         subtitleCallback.invoke(
-                            newSubtitleFile("Indonesian $indoCount", finalUrl)
+                            newSubtitleFile("Indonesian $indoIndex", finalUrl)
                         )
-                        indoCount++
+                        indoIndex++
                     }
                 }
             }
@@ -142,7 +132,6 @@ class MissAVProvider : MainAPI() {
         }
     }
 
-    @Suppress("DEPRECATION_ERROR") // Tetap pakai ini agar build tidak gagal karena constructor ExtractorLink
     override suspend fun loadLinks(
         data: String,
         isCasting: Boolean,
@@ -150,7 +139,7 @@ class MissAVProvider : MainAPI() {
         callback: (ExtractorLink) -> Unit
     ): Boolean {
         
-        // 1. Dapatkan Link Video
+        // 1. Ekstraksi Video (Gaya Penulisan Baru)
         var text = app.get(data).text
         text = getAndUnpack(text) //
 
@@ -162,7 +151,7 @@ class MissAVProvider : MainAPI() {
                 val rawUrl = match.groupValues[1]
                 val fixedUrl = rawUrl.replace("\\/", "/")
 
-                val quality = when {
+                val qualityVal = when {
                     fixedUrl.contains("1280x720") || fixedUrl.contains("720p") -> Qualities.P720.value
                     fixedUrl.contains("1920x1080") || fixedUrl.contains("1080p") -> Qualities.P1080.value
                     fixedUrl.contains("842x480") || fixedUrl.contains("480p") -> Qualities.P480.value
@@ -172,20 +161,21 @@ class MissAVProvider : MainAPI() {
 
                 val sourceName = if (fixedUrl.contains("surrit")) "Surrit (HD)" else "MissAV (Backup)"
 
-                // Menggunakan constructor lama sesuai instruksi "jangan diubah" agar kodingan lain aman
+                // Menggunakan fungsi gaya baru newExtractorLink sesuai saran compiler
                 callback.invoke(
-                    ExtractorLink(
+                    newExtractorLink(
                         source = this.name,
-                        name = "$sourceName $quality",
+                        name = "$sourceName $qualityVal",
                         url = fixedUrl,
-                        referer = data,
-                        quality = quality,
-                        isM3u8 = true 
-                    )
+                        type = ExtractorLinkType.M3U8
+                    ) {
+                        this.referer = data
+                        this.quality = qualityVal
+                    }
                 )
             }
 
-            // 2. Cari Semua Subtitle Indonesia (ADN-753, dll)
+            // 2. Ambil Semua Subtitle (Setelah link video berhasil diproses)
             val codeRegex = Regex("""([a-zA-Z]{2,5}-\d{3,5})""")
             val codeMatch = codeRegex.find(data)
             val code = codeMatch?.value
