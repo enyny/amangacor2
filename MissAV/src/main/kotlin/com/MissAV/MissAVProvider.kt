@@ -2,9 +2,9 @@ package com.MissAV
 
 import com.lagradost.cloudstream3.*
 import com.lagradost.cloudstream3.utils.ExtractorLink
+import com.lagradost.cloudstream3.utils.ExtractorLinkType
 import com.lagradost.cloudstream3.utils.Qualities
-// Import ini penting untuk mengakses fungsi newExtractorLink
-import com.lagradost.cloudstream3.utils.newExtractorLink 
+import com.lagradost.cloudstream3.utils.newExtractorLink
 import org.jsoup.nodes.Element
 
 class MissAVProvider : MainAPI() {
@@ -43,7 +43,7 @@ class MissAVProvider : MainAPI() {
             })
         }
         
-        // Membungkus list ke HomePageList
+        // FIX: Menggunakan HomePageList untuk mengatur isHorizontalImages
         return newHomePageResponse(
             HomePageList(
                 name = request.name,
@@ -83,7 +83,7 @@ class MissAVProvider : MainAPI() {
         }
     }
 
-    // --- 4. LOAD (Detail Video) ---
+    // --- 4. LOAD ---
     override suspend fun load(url: String): LoadResponse? {
         val document = app.get(url).document
 
@@ -98,7 +98,7 @@ class MissAVProvider : MainAPI() {
         }
     }
 
-    // --- 5. LOAD LINKS (FIXED: Menggunakan newExtractorLink) ---
+    // --- 5. LOAD LINKS ---
     override suspend fun loadLinks(
         data: String,
         isCasting: Boolean,
@@ -115,7 +115,7 @@ class MissAVProvider : MainAPI() {
                 val rawUrl = match.groupValues[1]
                 val fixedUrl = rawUrl.replace("\\/", "/")
 
-                val quality = when {
+                val qualityVal = when {
                     fixedUrl.contains("1280x720") || fixedUrl.contains("720p") -> Qualities.P720.value
                     fixedUrl.contains("1920x1080") || fixedUrl.contains("1080p") -> Qualities.P1080.value
                     fixedUrl.contains("842x480") || fixedUrl.contains("480p") -> Qualities.P480.value
@@ -125,18 +125,17 @@ class MissAVProvider : MainAPI() {
 
                 val sourceName = if (fixedUrl.contains("surrit")) "Surrit (HD)" else "MissAV (Backup)"
 
-                // PERBAIKAN DI SINI:
-                // Menggunakan fungsi helper 'newExtractorLink' bukan constructor class-nya langsung.
-                // Ini akan menyelesaikan masalah "Deprecated" dan juga aman dari error "Prerelease".
+                // FIX: Menggunakan newExtractorLink dengan benar (menggunakan lambda block)
                 callback.invoke(
                     newExtractorLink(
                         source = this.name,
-                        name = "$sourceName $quality",
+                        name = "$sourceName $qualityVal",
                         url = fixedUrl,
-                        referer = data,
-                        quality = quality,
-                        isM3u8 = true
-                    )
+                        type = ExtractorLinkType.M3U8
+                    ) {
+                        this.referer = data
+                        this.quality = qualityVal
+                    }
                 )
             }
             return true
