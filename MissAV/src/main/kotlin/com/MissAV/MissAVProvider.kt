@@ -2,7 +2,7 @@ package com.MissAV
 
 import com.lagradost.cloudstream3.*
 import com.lagradost.cloudstream3.utils.ExtractorLink
-import com.lagradost.cloudstream3.utils.ExtractorLinkType // Import Baru
+import com.lagradost.cloudstream3.utils.ExtractorLinkType
 import com.lagradost.cloudstream3.utils.Qualities
 import org.jsoup.nodes.Element
 
@@ -13,7 +13,44 @@ class MissAVProvider : MainAPI() {
     override var lang = "id"
     override val supportedTypes = setOf(TvType.NSFW)
 
-    // --- 1. SEARCH ---
+    // --- 1. DEFINISI KATEGORI UTAMA ---
+    override val mainPage = mainPageOf(
+        "$mainUrl/$lang/uncensored-leak" to "Kebocoran Tanpa Sensor",
+        "$mainUrl/$lang/release" to "Keluaran Terbaru",
+        "$mainUrl/$lang/new" to "Recent Update",
+        // Menggunakan %20 untuk spasi pada URL genre
+        "$mainUrl/$lang/genres/Wanita%20Menikah/Ibu%20Rumah%20Tangga" to "Wanita Menikah"
+    )
+
+    // --- 2. MAIN PAGE (Dipanggil untuk setiap kategori di atas) ---
+    override suspend fun getMainPage(page: Int, request: MainPageRequest): HomePageResponse? {
+        // request.data berisi URL dari daftar mainPage di atas
+        // request.name berisi Judul kategori (contoh: "Kebocoran Tanpa Sensor")
+        val document = app.get(request.data).document
+        val homeItems = ArrayList<SearchResponse>()
+
+        document.select("div.grid div.group").forEach { element ->
+            val linkElement = element.selectFirst("a") ?: return@forEach
+            val href = linkElement.attr("href")
+            val fixedUrl = fixUrl(href)
+            
+            val title = element.selectFirst("div.text-secondary")?.text()?.trim() 
+                ?: linkElement.attr("alt") 
+                ?: "No Title"
+            
+            val img = element.selectFirst("img")
+            val posterUrl = img?.attr("data-src") ?: img?.attr("src")
+
+            homeItems.add(newMovieSearchResponse(title, fixedUrl, TvType.NSFW) {
+                this.posterUrl = posterUrl
+            })
+        }
+        
+        // Mengembalikan daftar video untuk kategori spesifik tersebut
+        return newHomePageResponse(request.name, homeItems, isHorizontal = true)
+    }
+
+    // --- 3. SEARCH ---
     override suspend fun search(query: String): List<SearchResponse> {
         val fixedQuery = query.trim().replace(" ", "-")
         val url = "$mainUrl/$lang/search/$fixedQuery"
@@ -45,27 +82,7 @@ class MissAVProvider : MainAPI() {
         }
     }
 
-    // --- 2. MAIN PAGE ---
-    override suspend fun getMainPage(page: Int, request: MainPageRequest): HomePageResponse? {
-        val url = "$mainUrl/$lang/new"
-        val document = app.get(url).document
-        val homeItems = ArrayList<SearchResponse>()
-
-        document.select("div.grid div.group").forEach { element ->
-            val linkElement = element.selectFirst("a") ?: return@forEach
-            val fixedUrl = fixUrl(linkElement.attr("href"))
-            val title = element.selectFirst("div.text-secondary")?.text()?.trim() ?: "No Title"
-            val img = element.selectFirst("img")
-            val posterUrl = img?.attr("data-src") ?: img?.attr("src")
-
-            homeItems.add(newMovieSearchResponse(title, fixedUrl, TvType.NSFW) {
-                this.posterUrl = posterUrl
-            })
-        }
-        return newHomePageResponse(HomePageList("Latest Videos", homeItems, isHorizontal = false), false)
-    }
-
-    // --- 3. LOAD ---
+    // --- 4. LOAD (Detail Video) ---
     override suspend fun load(url: String): LoadResponse? {
         val document = app.get(url).document
 
@@ -82,7 +99,7 @@ class MissAVProvider : MainAPI() {
         }
     }
 
-    // --- 4. LOAD LINKS (Updated Standard) ---
+    // --- 5. LOAD LINKS (Pemutar Video) ---
     override suspend fun loadLinks(
         data: String,
         isCasting: Boolean,
@@ -109,9 +126,6 @@ class MissAVProvider : MainAPI() {
 
                 val sourceName = if (fixedUrl.contains("surrit")) "Surrit (HD)" else "MissAV (Backup)"
 
-                // PERUBAHAN DI SINI:
-                // Menggunakan konstruktor ExtractorLink yang sesuai dengan standar file ExtractorApi.kt
-                // Menggunakan parameter 'type' alih-alih 'isM3u8'
                 callback.invoke(
                     ExtractorLink(
                         source = this.name,
@@ -119,7 +133,7 @@ class MissAVProvider : MainAPI() {
                         url = fixedUrl,
                         referer = data,
                         quality = quality,
-                        type = ExtractorLinkType.M3U8 // Standar Baru
+                        type = ExtractorLinkType.M3U8
                     )
                 )
             }
