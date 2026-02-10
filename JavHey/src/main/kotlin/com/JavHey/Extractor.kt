@@ -6,6 +6,7 @@ import com.lagradost.cloudstream3.utils.INFER_TYPE
 import com.lagradost.cloudstream3.utils.Qualities
 import com.lagradost.cloudstream3.app
 import com.lagradost.cloudstream3.utils.M3u8Helper
+import com.lagradost.cloudstream3.utils.newExtractorLink // PENTING: Import baru ini
 
 class Hglink : Haxloppd() {
     override var mainUrl = "https://hglink.to"
@@ -33,7 +34,6 @@ open class Haxloppd : ExtractorApi() {
         val response = app.get(targetUrl, referer = "https://javhey.com/").text
 
         // 3. Cari endpoint pass_md5 (Kunci rahasia Doodstream)
-        // Pola regex mencari: /pass_md5/mungkin_ada_string_acak/ID_VIDEO
         val md5Pattern = Regex("""/pass_md5/[^']*""")
         val md5Match = md5Pattern.find(response)?.value
 
@@ -43,36 +43,36 @@ open class Haxloppd : ExtractorApi() {
             // 4. Request ke pass_md5 untuk mendapatkan Token Stream awal
             val tokenResponse = app.get(trueUrl, referer = targetUrl).text
 
-            // 5. Buat String acak (Doodstream butuh string acak di akhir URL agar unik)
+            // 5. Buat String acak
             val randomString = generateRandomString()
             val videoUrl = "$tokenResponse$randomString?token=${md5Match.substringAfterLast("/")}&expiry=${System.currentTimeMillis()}"
 
-            // 6. Dapatkan kualitas & kirim link (Biasanya m3u8)
+            // 6. Dapatkan kualitas & kirim link (M3u8Helper aman digunakan)
             M3u8Helper.generateM3u8(
                 name,
                 videoUrl,
-                targetUrl // Referer wajib saat memutar video
+                targetUrl 
             ).forEach(callback)
         } else {
-            // Fallback jika pola pass_md5 berubah (jarang terjadi)
-            // Coba cari redirect langsung jika server sedang 'longgar'
+            // Fallback: Cari redirect langsung
             val redirectMatch = Regex("""window\.location\.replace\('([^']*)'\)""").find(response)
             if (redirectMatch != null) {
+                // PERBAIKAN DI SINI: Menggunakan newExtractorLink
                 callback.invoke(
-                    ExtractorLink(
-                        name,
-                        name,
-                        redirectMatch.groupValues[1],
-                        targetUrl,
-                        Qualities.Unknown.value,
-                        INFER_TYPE
-                    )
+                    newExtractorLink(
+                        source = name,
+                        name = name,
+                        url = redirectMatch.groupValues[1],
+                        type = INFER_TYPE
+                    ) {
+                        this.referer = targetUrl
+                        this.quality = Qualities.Unknown.value
+                    }
                 )
             }
         }
     }
 
-    // Fungsi pembantu untuk membuat string acak (10 karakter)
     private fun generateRandomString(): String {
         val allowedChars = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789"
         return (1..10)
