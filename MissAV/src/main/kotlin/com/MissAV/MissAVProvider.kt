@@ -46,14 +46,18 @@ class MissAVProvider : MainAPI() {
     }
 
     override suspend fun search(query: String): List<SearchResponse> {
-        // PERBAIKAN PENCARIAN:
-        // Jangan ubah spasi jadi strip (-), tapi gunakan encoding URL (%20).
-        // Ini agar kata kunci panjang (misal: "suami istri menikah") terbaca sebagai 3 kata terpisah.
-        val fixedQuery = query.trim().replace(" ", "%20")
+        // PERBAIKAN PENCARIAN (FINAL):
+        // Cukup trim() spasi. Cloudstream akan otomatis meng-encode spasi menjadi %20.
+        // Menambahkan header Referer agar request terlihat valid seperti browser.
+        val fixedQuery = query.trim()
         val url = "$mainUrl/$lang/search/$fixedQuery"
         
         return try {
-            val document = app.get(url).document
+            val document = app.get(
+                url, 
+                headers = mapOf("Referer" to "$mainUrl/")
+            ).document
+            
             val results = ArrayList<SearchResponse>()
 
             document.select("div.thumbnail").forEach { element ->
@@ -90,6 +94,7 @@ class MissAVProvider : MainAPI() {
         val recommendations = ArrayList<SearchResponse>()
         
         try {
+            // Prioritas: Aktris -> Pembuat -> Genre
             var recUrl = document.selectFirst("div.text-secondary a[href*='/actresses/']")?.attr("href")
             
             if (recUrl == null) {
@@ -103,6 +108,7 @@ class MissAVProvider : MainAPI() {
                 val baseUrl = fixUrl(recUrl)
                 var page = 1
                 
+                // LOOPING: Ambil halaman 1, 2, dst sampai terkumpul 20 item
                 while (recommendations.size < 20 && page <= 3) {
                     val targetUrl = if (page > 1) "$baseUrl?page=$page" else baseUrl
                     val recDoc = app.get(targetUrl).document
@@ -117,12 +123,14 @@ class MissAVProvider : MainAPI() {
                         val href = linkElement.attr("href")
                         val fixedVideoUrl = fixUrl(href)
 
+                        // Jangan masukkan video yang sedang ditonton
                         if (fixedVideoUrl != url) {
                             val recTitle = linkElement.text().trim()
                             val img = element.selectFirst("img")
                             val recPoster = img?.attr("data-src") ?: img?.attr("src")
 
                             if (!recPoster.isNullOrEmpty()) {
+                                // Cek duplikat
                                 val isDuplicate = recommendations.any { it.url == fixedVideoUrl }
                                 if (!isDuplicate) {
                                     recommendations.add(
@@ -134,7 +142,7 @@ class MissAVProvider : MainAPI() {
                             }
                         }
                     }
-                    page++ 
+                    page++ // Lanjut ke halaman berikutnya
                 }
             }
         } catch (e: Exception) {
@@ -159,6 +167,7 @@ class MissAVProvider : MainAPI() {
             searchResults.take(15).forEach { linkElement ->
                 val resultTitle = linkElement.text().trim()
                 
+                // FILTER: Judul subtitle WAJIB mengandung Kode Video (misal: SSNI-528)
                 if (resultTitle.contains(code, ignoreCase = true)) {
                     var detailPath = linkElement.attr("href")
                     if (!detailPath.startsWith("http")) {
@@ -183,14 +192,14 @@ class MissAVProvider : MainAPI() {
                                 
                                 subtitleCallback.invoke(
                                     SubtitleFile(
-                                        lang = rawLang, 
+                                        lang = rawLang, // Biarkan nama asli agar player grouping 1,2,3
                                         url = finalUrl
                                     )
                                 )
                             }
                         }
                     } catch (e: Exception) {
-                        
+                        // Skip error per item
                     }
                 }
             }
