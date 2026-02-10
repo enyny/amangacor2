@@ -13,6 +13,7 @@ class MissAVProvider : MainAPI() {
     override var lang = "id"
     override val supportedTypes = setOf(TvType.NSFW)
 
+    // --- 1. MAIN PAGE KATEGORI ---
     override val mainPage = mainPageOf(
         "$mainUrl/$lang/uncensored-leak" to "Kebocoran Tanpa Sensor",
         "$mainUrl/$lang/release" to "Keluaran Terbaru",
@@ -50,6 +51,7 @@ class MissAVProvider : MainAPI() {
         )
     }
 
+    // --- 2. SEARCH ---
     override suspend fun search(query: String): List<SearchResponse> {
         val fixedQuery = query.trim().replace(" ", "-")
         val url = "$mainUrl/$lang/search/$fixedQuery"
@@ -78,13 +80,22 @@ class MissAVProvider : MainAPI() {
         }
     }
 
+    // --- 3. LOAD (UPDATE DESKRIPSI) ---
     override suspend fun load(url: String): LoadResponse? {
         val document = app.get(url).document
 
         val title = document.selectFirst("h1.text-base")?.text()?.trim() ?: "Unknown Title"
+        
         val poster = document.selectFirst("meta[property='og:image']")?.attr("content")
             ?: document.selectFirst("video.player")?.attr("poster")
-        val description = document.selectFirst("div.text-secondary.mb-2")?.text()?.trim()
+
+        // PERBAIKAN DESKRIPSI:
+        // Mencari semua elemen 'div' dengan class 'text-secondary'
+        // Lalu mengambil yang teksnya PALING PANJANG (biasanya itu sinopsis)
+        // Jika gagal, ambil dari meta tag og:description
+        val description = document.select("div.text-secondary")
+            .maxByOrNull { it.text().length }?.text()?.trim()
+            ?: document.selectFirst("meta[property='og:description']")?.attr("content")
 
         return newMovieLoadResponse(title, url, TvType.NSFW, url) {
             this.posterUrl = poster
@@ -92,7 +103,7 @@ class MissAVProvider : MainAPI() {
         }
     }
 
-    // PENTING: Gunakan DEPRECATION_ERROR agar compiler mengizinkan metode lama
+    // --- 4. LOAD LINKS ---
     @Suppress("DEPRECATION_ERROR") 
     override suspend fun loadLinks(
         data: String,
@@ -122,8 +133,6 @@ class MissAVProvider : MainAPI() {
 
                 val sourceName = if (fixedUrl.contains("surrit")) "Surrit (HD)" else "MissAV (Backup)"
 
-                // Menggunakan Constructor LAMA (yang punya parameter referer & isM3u8)
-                // Ini aman karena kita sudah pakai @Suppress("DEPRECATION_ERROR") di atas
                 callback.invoke(
                     ExtractorLink(
                         source = this.name,
