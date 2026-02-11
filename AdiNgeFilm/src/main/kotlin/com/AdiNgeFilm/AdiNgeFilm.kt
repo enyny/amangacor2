@@ -16,7 +16,7 @@ import org.jsoup.nodes.Element
 
 class AdiNgeFilm : MainAPI() {
 
-    override var mainUrl = "https://new28.ngefilm.site"
+    override var mainUrl = "https://new31.ngefilm.site" 
     private var directUrl: String? = null
     override var name = "AdiNgeFilm"
     override val hasMainPage = true
@@ -41,7 +41,10 @@ class AdiNgeFilm : MainAPI() {
     )
     
     override suspend fun getMainPage(page: Int, request: MainPageRequest): HomePageResponse {
-        val document = app.get("$mainUrl/${request.data.format(page)}").document
+        val response = app.get("$mainUrl/${request.data.format(page)}")
+        mainUrl = getBaseUrl(response.url)
+        
+        val document = response.document
         val items = document.select("article.item-infinite").mapNotNull { it.toSearchResult() }
         return newHomePageResponse(request.name, items)
     }
@@ -74,7 +77,10 @@ class AdiNgeFilm : MainAPI() {
     }    
 
     override suspend fun search(query: String): List<SearchResponse> {
-        val document = app.get("$mainUrl?s=$query&post_type[]=post&post_type[]=tv").document
+        val response = app.get("$mainUrl?s=$query&post_type[]=post&post_type[]=tv")
+        mainUrl = getBaseUrl(response.url)
+        
+        val document = response.document
         return document.select("article.item-infinite").mapNotNull { it.toSearchResult() }
     }
 
@@ -182,6 +188,10 @@ class AdiNgeFilm : MainAPI() {
         val document = app.get(data).document
         val id = document.selectFirst("div#muvipro_player_content_id")?.attr("data-id")
 
+        // === LOG CCTV START ===
+        System.out.println("[AdiNgeFilm] Mencari link di halaman: $data")
+        // === LOG CCTV END ===
+
         if (id.isNullOrEmpty()) {
             document.select("ul.muvipro-player-tabs li a").amap { ele ->
                 val iframe = app.get(fixUrl(ele.attr("href")))
@@ -190,6 +200,10 @@ class AdiNgeFilm : MainAPI() {
                     .getIframeAttr()
                     ?.let { httpsify(it) }
                     ?: return@amap
+
+                // === LOG CCTV START ===
+                System.out.println("[AdiNgeFilm] Link Iframe Ditemukan (Non-Ajax): $iframe")
+                // === LOG CCTV END ===
 
                 loadExtractor(iframe, "$directUrl/", subtitleCallback, callback)
             }
@@ -207,6 +221,10 @@ class AdiNgeFilm : MainAPI() {
                     .select("iframe")
                     .attr("src")
                     .let { httpsify(it) }
+
+                // === LOG CCTV START ===
+                System.out.println("[AdiNgeFilm] Link Iframe Ditemukan (Ajax): $server")
+                // === LOG CCTV END ===
 
                 loadExtractor(server, "$directUrl/", subtitleCallback, callback)
             }
