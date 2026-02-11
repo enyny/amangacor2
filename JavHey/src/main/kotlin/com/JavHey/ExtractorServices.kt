@@ -6,14 +6,14 @@ import com.lagradost.cloudstream3.utils.AppUtils.tryParseJson
 import com.lagradost.cloudstream3.utils.M3u8Helper.Companion.generateM3u8
 import com.lagradost.cloudstream3.network.WebViewResolver
 import org.jsoup.nodes.Document
-import java.net.URI // <--- INI YANG KETINGGALAN TADI
+import java.net.URI // SUDAH DIPERBAIKI (Import URI)
 import java.util.Base64
-import kotlinx.coroutines.*
+import kotlinx.coroutines.* // Wajib untuk coroutineScope
 
 /**
- * MANAGER TURBO (V4 Final Fix)
- * - Added missing import java.net.URI
- * - Fixed compilation errors.
+ * MANAGER TURBO (V5 Stable)
+ * - Menggunakan coroutineScope agar sinkron dengan UI CloudStream.
+ * - Mencegah "No Links Found" karena race condition.
  */
 object JavHeyExtractorManager {
 
@@ -45,13 +45,17 @@ object JavHeyExtractorManager {
             }
         } catch (e: Exception) { e.printStackTrace() }
 
-        // 3. EKSEKUSI PARALEL (Turbo Load)
-        rawUrls.forEach { url ->
-            CoroutineScope(Dispatchers.IO).launch {
-                try {
-                    loadExtractor(url, subtitleCallback, callback)
-                } catch (e: Exception) {
-                    e.printStackTrace()
+        // 3. EKSEKUSI PARALEL (Wait for Completion)
+        // Menggunakan coroutineScope memaksa fungsi menunggu semua job selesai sebelum return.
+        // Ini kuncinya agar link muncul di layar!
+        coroutineScope {
+            rawUrls.forEach { url ->
+                launch { // Jalan bersamaan (Paralel) tapi tetap ditunggu
+                    try {
+                        loadExtractor(url, subtitleCallback, callback)
+                    } catch (e: Exception) {
+                        e.printStackTrace()
+                    }
                 }
             }
         }
