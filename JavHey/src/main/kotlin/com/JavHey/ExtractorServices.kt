@@ -5,28 +5,30 @@ import com.lagradost.cloudstream3.utils.*
 import com.lagradost.cloudstream3.utils.AppUtils.tryParseJson
 import com.lagradost.cloudstream3.utils.M3u8Helper.Companion.generateM3u8
 import com.lagradost.cloudstream3.network.WebViewResolver
-import org.jsoup.nodes.Document
-import java.net.URI // SUDAH DIPERBAIKI (Import URI)
+import java.net.URI
 import java.util.Base64
-import kotlinx.coroutines.* // Wajib untuk coroutineScope
+import kotlinx.coroutines.*
 
 /**
- * MANAGER TURBO (V5 Stable)
- * - Menggunakan coroutineScope agar sinkron dengan UI CloudStream.
- * - Mencegah "No Links Found" karena race condition.
+ * MANAGER ULTRA FAST (GOD MODE)
+ * 1. Menggunakan Regex (Ringan) vs Jsoup (Berat).
+ * 2. Menggunakan SupervisorScope (Anti-Crash).
+ * 3. Menggunakan Timeouts (Anti-Lemot).
  */
 object JavHeyExtractorManager {
 
     suspend fun invoke(
-        document: Document,
+        html: String, // Menerima String mentah, lebih cepat diproses
         subtitleCallback: (SubtitleFile) -> Unit,
         callback: (ExtractorLink) -> Unit
     ) {
         val rawUrls = mutableSetOf<String>()
 
-        // 1. Ambil Link Tersembunyi (Prioritas)
-        try {
-            document.selectFirst("input#links")?.attr("value")?.let { encrypted ->
+        // 1. Regex untuk mencari value="base64..." (Super Cepat)
+        // Pola: Mencari id="links" lalu mengambil value di dalamnya
+        val regexBase64 = Regex("""id="links"\s+value="([^"]+)"""")
+        regexBase64.find(html)?.groupValues?.get(1)?.let { encrypted ->
+            try {
                 if (encrypted.isNotEmpty()) {
                     val decoded = String(Base64.getDecoder().decode(encrypted))
                     decoded.split(",,,").forEach { url ->
@@ -34,25 +36,34 @@ object JavHeyExtractorManager {
                         if (isValidLink(clean)) rawUrls.add(clean)
                     }
                 }
-            }
-        } catch (e: Exception) { e.printStackTrace() }
+            } catch (e: Exception) { e.printStackTrace() }
+        }
 
-        // 2. Ambil Link Tombol (Cadangan)
-        try {
-            document.select("div.links-download a").forEach { link ->
-                val href = link.attr("href").trim()
-                if (isValidLink(href)) rawUrls.add(href)
+        // 2. Regex untuk mencari link Download (Fallback)
+        // Pola: Mencari href="..." di dalam div links-download (perkiraan pola sederhana)
+        // Kita scan semua link http/https di halaman, lalu filter
+        val regexLink = Regex("""href="(https?://[^"]+)"""")
+        regexLink.findAll(html).forEach { match ->
+            val href = match.groupValues[1].trim()
+            // Logika tambahan: Biasanya link download ada kata tertentu atau struktur tertentu
+            // Tapi karena kita punya filter isValidLink, kita masukkan saja yang relevan
+            if (isValidLink(href) && !rawUrls.contains(href)) {
+                rawUrls.add(href)
             }
-        } catch (e: Exception) { e.printStackTrace() }
+        }
 
-        // 3. EKSEKUSI PARALEL (Wait for Completion)
-        // Menggunakan coroutineScope memaksa fungsi menunggu semua job selesai sebelum return.
-        // Ini kuncinya agar link muncul di layar!
-        coroutineScope {
+        // 3. EKSEKUSI PARALEL DENGAN TIMEOUT (Kunci Kecepatan)
+        supervisorScope { // Pakai supervisor agar error 1 tidak mematikan semua
             rawUrls.forEach { url ->
-                launch { // Jalan bersamaan (Paralel) tapi tetap ditunggu
+                launch(Dispatchers.IO) {
                     try {
-                        loadExtractor(url, subtitleCallback, callback)
+                        // BATAS WAKTU: 10 Detik per link.
+                        // Jika server lemot > 10 detik, tinggalkan! Jangan bikin user nunggu.
+                        withTimeout(10_000L) { 
+                            loadExtractor(url, subtitleCallback, callback)
+                        }
+                    } catch (e: TimeoutCancellationException) {
+                        // Link terlalu lama, skip diam-diam
                     } catch (e: Exception) {
                         e.printStackTrace()
                     }
@@ -61,19 +72,21 @@ object JavHeyExtractorManager {
         }
     }
 
-    // Filter Link Sampah/Lemot
     private fun isValidLink(url: String): Boolean {
-        if (!url.startsWith("http")) return false
         val u = url.lowercase()
-        return !u.contains("emturbovid") &&
-               !u.contains("bestx.stream") &&
-               !u.contains("evosrv.com") &&
-               !u.contains("bysebuho")
+        // Filter Strict: Hanya ambil domain yang kita punya Extractor-nya
+        // Ini mempercepat karena tidak mencoba loading link sampah (iklan/sosmed)
+        return (u.contains("vidhide") || u.contains("filelions") || u.contains("kinoger") ||
+                u.contains("mixdrop") || u.contains("streamwish") || u.contains("mwish") ||
+                u.contains("wishembed") || u.contains("dood") || u.contains("ds2play") ||
+                u.contains("lulustream") || u.contains("swdyu") || u.contains("earn")) &&
+               !u.contains("emturbovid") && 
+               !u.contains("bestx")
     }
 }
 
 // ============================================================================
-//  SECTION: CUSTOM EXTRACTORS
+//  SECTION: CUSTOM EXTRACTORS (Sama seperti sebelumnya)
 // ============================================================================
 
 // --- FAMILY: VIDHIDE / FILELIONS ---
@@ -202,7 +215,7 @@ open class DoodLaExtractor : ExtractorApi() {
         val embedUrl = url.replace("/d/", "/e/")
         val req = app.get(embedUrl)
         
-        // FIX: URI sekarang sudah diimport
+        // FIX: URI Import
         val host = URI(req.url).let { "${it.scheme}://${it.host}" }
         
         val md5 = Regex("/pass_md5/[^']*").find(req.text)?.value ?: return
