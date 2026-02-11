@@ -8,13 +8,20 @@ buildscript {
     repositories {
         google()
         mavenCentral()
-        maven("https://jitpack.io")
+        // JitPack wajib ada di sini buat narik plugin recloudstream
+        maven("https://jitpack.io") 
     }
 
     dependencies {
-        classpath("com.android.tools.build:gradle:8.13.2")
-        classpath("com.github.recloudstream:gradle:master-SNAPSHOT")
-        classpath("org.jetbrains.kotlin:kotlin-gradle-plugin:2.3.0")
+        // GANTI KE VERSI STABIL (Standard CloudStream)
+        classpath("com.android.tools.build:gradle:8.2.2") 
+        
+        // KUNCI: Pakai Commit Hash spesifik, JANGAN master-SNAPSHOT
+        // Hash 'e116639' adalah versi stabil plugin Cloudstream
+        classpath("com.github.recloudstream:gradle:e116639")
+        
+        // Pakai Kotlin 1.9.x agar kompatibel dengan CloudStream core
+        classpath("org.jetbrains.kotlin:kotlin-gradle-plugin:1.9.22")
     }
 }
 
@@ -45,8 +52,8 @@ subprojects {
 
         defaultConfig {
             minSdk = 21
-            compileSdkVersion(35)
-            targetSdk = 35
+            compileSdkVersion(34) // 35 boleh, tapi 34 lebih aman
+            targetSdk = 34
         }
 
         compileOptions {
@@ -60,8 +67,7 @@ subprojects {
                 freeCompilerArgs.addAll(
                     "-Xno-call-assertions",
                     "-Xno-param-assertions",
-                    "-Xno-receiver-assertions",
-                    "-Xannotation-default-target=param-property"
+                    "-Xno-receiver-assertions"
                 )
             }
         }
@@ -71,23 +77,24 @@ subprojects {
         val implementation by configurations
         val cloudstream by configurations
         
-        // KEMBALI KE VERSI LAMA (Biar file lain gak error)
+        // Dependency Wajib
         cloudstream("com.lagradost:cloudstream3:pre-release") 
 
-        // Other dependencies
+        // Standard libs
         implementation(kotlin("stdlib"))
-        implementation("com.github.Blatzar:NiceHttp:0.4.16")
-        implementation("org.jsoup:jsoup:1.22.1")
-        implementation("androidx.annotation:annotation:1.9.1")
-        implementation("com.fasterxml.jackson.module:jackson-module-kotlin:2.20.1")
-        implementation("com.fasterxml.jackson.core:jackson-databind:2.20.1")
-        implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.10.2")
-        implementation("org.mozilla:rhino:1.9.0")
+        implementation("com.github.Blatzar:NiceHttp:0.4.11") // Versi stabil
+        implementation("org.jsoup:jsoup:1.17.2") // Versi stabil
+        
+        // Serialization & JSON
+        implementation("com.fasterxml.jackson.module:jackson-module-kotlin:2.16.1")
+        implementation("com.google.code.gson:gson:2.10.1")
+        
+        // Coroutines
+        implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.7.3")
+        
+        // Tools tambahan
+        implementation("org.mozilla:rhino:1.7.14") 
         implementation("me.xdrop:fuzzywuzzy:1.4.0")
-        implementation("com.google.code.gson:gson:2.13.2")
-        implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.9.0")
-        implementation("com.github.vidstige:jadb:v1.2.1")
-        implementation("org.bouncycastle:bcpkix-jdk15on:1.70")
     }
 }
 
