@@ -21,8 +21,8 @@ class JavHey : MainAPI() {
     override val mainPage = mainPageOf(
         "$mainUrl/videos/paling-dilihat/page=" to "Paling Dilihat",
         "$mainUrl/videos/top-rating/page=" to "Top Rating",
-        "$mainUrl/category/12/cuckold-or-ntr/page=" to "CUCKOLD OR NTR",
-        "$mainUrl/category/31/decensored/page=" to "DECENSORED",
+        "$mainUrl/category/12/cuckold-or-ntr/page=" to "CUCKOLD OR NTR VIDEOS",
+        "$mainUrl/category/31/decensored/page=" to "DECENSORED VIDEOS",
         "$mainUrl/category/21/drama/page=" to "Drama",
         "$mainUrl/category/114/female-investigator/page=" to "Investigasi",
         "$mainUrl/category/9/housewife/page=" to "HOUSEWIFE",
@@ -41,12 +41,13 @@ class JavHey : MainAPI() {
         val titleElement = this.selectFirst("div.item_content h3 a") ?: return null
         val title = titleElement.text().trim()
         val href = fixUrl(titleElement.attr("href"))
-        val imgTag = this.selectFirst("div.item_header img")
-        val posterUrl = imgTag?.attr("data-src")?.takeIf { it.isNotEmpty() } ?: imgTag?.attr("src")
         
-        return newMovieSearchResponse(title, href, TvType.NSFW) { 
-            this.posterUrl = posterUrl 
-        }
+        // Ambil gambar langsung apa adanya
+        val imgTag = this.selectFirst("div.item_header img")
+        val posterUrl = imgTag?.attr("data-src")?.takeIf { it.isNotEmpty() } 
+            ?: imgTag?.attr("src")
+
+        return newMovieSearchResponse(title, href, TvType.NSFW) { this.posterUrl = posterUrl }
     }
 
     override suspend fun search(query: String): List<SearchResponse> {
@@ -58,14 +59,16 @@ class JavHey : MainAPI() {
     override suspend fun load(url: String): LoadResponse {
         val response = app.get(url, headers = headers, timeout = 30)
         val document = response.document
+        val finalUrl = response.url 
+        
         val title = document.selectFirst("h1.product_title")?.text()?.trim() ?: "No Title"
-        val description = document.select("p.video-description").text()
-            .replace("Description: ", "", ignoreCase = true).trim()
+        val description = document.select("p.video-description").text().replace("Description: ", "", ignoreCase = true).trim()
         
         val imgTag = document.selectFirst("div.images img")
-        val poster = imgTag?.attr("data-src")?.takeIf { it.isNotEmpty() } ?: imgTag?.attr("src")
+        val poster = imgTag?.attr("data-src")?.takeIf { it.isNotEmpty() } 
+            ?: imgTag?.attr("src")
         
-        return newMovieLoadResponse(title, response.url, TvType.NSFW, response.url) {
+        return newMovieLoadResponse(title, finalUrl, TvType.NSFW, finalUrl) {
             this.posterUrl = poster
             this.plot = description
         }
@@ -77,9 +80,10 @@ class JavHey : MainAPI() {
         subtitleCallback: (SubtitleFile) -> Unit,
         callback: (ExtractorLink) -> Unit
     ): Boolean {
-        // Delegasikan tugas berat ke ExtractorManager
-        val document = app.get(data, headers = headers, timeout = 30).document
-        JavHeyExtractorManager.invoke(document, subtitleCallback, callback)
+        // PERUBAHAN DI SINI: Gunakan .text (String), BUKAN .document
+        // JavHeyExtractorManager sekarang mengharapkan String agar parsing lebih cepat pakai Regex
+        val htmlText = app.get(data, headers = headers, timeout = 30).text
+        JavHeyExtractorManager.invoke(htmlText, subtitleCallback, callback)
         return true
     }
 }
